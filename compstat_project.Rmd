@@ -1,0 +1,286 @@
+---
+title: "Computational Statistics Project"
+author: "Derek Wagner"
+date: "11/5/2023"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+```{r}
+ncols=421
+
+# Read in data
+df = readLines(con="C:/Users/wagnedg1/Documents/EP/XXH2021_YRBS_Data.dat")
+df <- strsplit(df, ",")
+
+# Select variables of interest
+df_2 <- data.frame(
+  "Age" = substring(df, 17, 17),
+  "Sex" = substring(df, 18, 18),
+  "Grade" = substring(df, 19, 19),
+  "Latino" = substring(df, 20, 20),
+  "Race" = substring(df, 21, 28),
+  "Height" = as.numeric(substring(df, 29, 32)),
+  "Weight" = as.numeric(substring(df, 33, 38)),
+  "Seatbelt" = substring(df, 39, 39),
+  "PassengerDUI" = substring(df, 40, 40),
+  "DrinkingDriving" = substring(df, 41, 41),
+  "CarryAtSchool" = substring(df, 43, 43),
+  "GunCarry" = substring(df, 44, 44),
+  "SchoolSafetyConcerns" = substring(df, 45, 45),
+  "ThreatenedAtSchool" = substring(df, 46, 46),
+  "PhysicalFighting" = substring(df, 47, 47),
+  "PhysicalFightingSchool" = substring(df, 48, 48),
+  "SawViolenceNeighborhood" = substring(df, 49, 49),
+  "ForcedIntercourse" = substring(df, 50, 50),
+  "ForcedSexThings" = substring(df, 51, 51),
+  "ForcedSexThingsDate" = substring(df, 52, 52),
+  "DatePhysicallyHurt" = substring(df, 53, 53),
+  "BulliedSchool" = substring(df, 54, 54),
+  "ElectronicallyBullied" = substring(df, 55, 55),
+  "SadHopeless" = substring(df, 56, 56),
+  "ConsiderSuicide" = substring(df, 57, 57),
+  "SuicidePlan" = substring(df, 58, 58),
+  "AttemptSuicide" = substring(df, 59, 59),
+  "InjuriousSuicideAttempt" = substring(df, 60, 60),
+  "AlcoholUse" = substring(df, 72, 72),
+  "CocaineUse" = substring(df, 81, 81),
+  "HeroinUse" = substring(df, 83, 83),
+  "MethUse" = substring(df, 84, 84),
+  "EcstasyUse" = substring(df, 85, 85),
+  "InjectedDrug" = substring(df, 86, 86),
+  "SexualIdentity" = substring(df, 96, 96),
+  "WeightPerception" = substring(df, 97, 97),
+  "CurrentMentalHealth" = substring(df, 116, 116),
+  "Sleep" = substring(df, 117, 117),
+  "Homelessness" = substring(df, 118, 118),
+  "PandemicMentalHealth" = substring(df, 124, 124),
+  "JobLossPandemic" = substring(df, 125, 125),
+  "SchoolRelationships" = substring(df, 127, 127),
+  "ParentalMonitoring" = substring(df, 128, 128),
+  "DifficultyConcentrating" = substring(df, 129, 129)
+)
+
+df_2 = as.data.frame(apply(df_2, 2, 
+                             function(x) str_replace_all(string=x, 
+                                               pattern=" ", repl="")))
+df_2 = df_2%>%mutate_if(is.character, list(~na_if(.,""))) 
+
+df_2 = na.omit(df_2)
+```
+
+```{r}
+# Racial indicator variables
+df_2$Race_Black = str_detect(df_2$Race, 'C')
+df_2$Race_Black[df_2$Race_Black==TRUE] = "1"
+df_2$Race_Black[df_2$Race_Black==FALSE] = "0"
+df_2$Race_AI_AN = str_detect(df_2$Race, 'A')
+df_2$Race_AI_AN[df_2$Race_AI_AN==TRUE] = "1"
+df_2$Race_AI_AN[df_2$Race_AI_AN==FALSE] = "0"
+df_2$Race_Asian = str_detect(df_2$Race, 'B')
+df_2$Race_Asian[df_2$Race_Asian==TRUE] = "1"
+df_2$Race_Asian[df_2$Race_Asian==FALSE] = "0"
+df_2$Race_NH_PI = str_detect(df_2$Race, 'D')
+df_2$Race_NH_PI[df_2$Race_NH_PI==TRUE] = "1"
+df_2$Race_NH_PI[df_2$Race_NH_PI==FALSE] = "0"
+df_2$Race_White = str_detect(df_2$Race, 'E')
+df_2$Race_White[df_2$Race_White==TRUE] = "1"
+df_2$Race_White[df_2$Race_White==FALSE] = "0"
+df_2$AttemptSuicide[df_2$AttemptSuicide != "1"] = "2"
+
+# Make height and weight numeric
+df_2$Height = as.numeric(df_2$Height)
+df_2$Weight = as.numeric(df_2$Weight)
+```
+
+## Exploration
+
+```{r}
+# Overall counts of "AttemptSuicide" 
+ggplot(data=df_2)+
+  geom_bar(aes(x=AttemptSuicide))
+```
+
+
+```{r}
+# Race == Black vs AttemptSuicide
+df_3 = df_2%>%group_by(Race_Black, AttemptSuicide)%>%
+  summarize(count=n())%>%
+  mutate(freq=count/sum(count))
+ggplot(data=df_3, mapping=aes(x=as.character(Race_Black), y=AttemptSuicide))+
+  geom_tile(aes(fill=freq))+
+  geom_text(aes(label = freq), color = "white", size = 4)
+```
+
+```{r}
+# Race == AI/AN vs AttemptSuicide
+df_3 = df_2%>%group_by(Race_AI_AN, AttemptSuicide)%>%
+  summarize(count=n())%>%
+  mutate(freq=count/sum(count))
+ggplot(data=df_3, mapping=aes(x=Race_AI_AN, y=AttemptSuicide))+
+  geom_tile(aes(fill=freq))+
+  geom_text(aes(label = freq), color = "white", size = 4)
+```
+
+```{r}
+# Race == Asian vs AttemptSuicide
+df_3 = df_2%>%group_by(Race_Asian, AttemptSuicide)%>%
+  summarize(count=n())%>%
+  mutate(freq=count/sum(count))
+ggplot(data=df_3, mapping=aes(x=Race_Asian, y=AttemptSuicide))+
+  geom_tile(aes(fill=freq))+
+  geom_text(aes(label = freq), color = "white", size = 4)
+```
+
+```{r}
+# Race == NH/PI vs AttemptSuicide
+df_3 = df_2%>%group_by(Race_NH_PI, AttemptSuicide)%>%
+  summarize(count=n())%>%
+  mutate(freq=count/sum(count))
+ggplot(data=df_3, mapping=aes(x=Race_NH_PI, y=AttemptSuicide))+
+  geom_tile(aes(fill=freq))+
+  geom_text(aes(label = freq), color = "white", size = 4)
+```
+
+```{r}
+# Race == White vs AttemptSuicide
+df_3 = df_2%>%group_by(Race_White, AttemptSuicide)%>%
+  summarize(count=n())%>%
+  mutate(freq=count/sum(count))
+ggplot(data=df_3, mapping=aes(x=Race_White, y=AttemptSuicide))+
+  geom_tile(aes(fill=freq))+
+  geom_text(aes(label = freq), color = "white", size = 4)
+```
+
+```{r}
+# Drinking & Driving vs AttemptSuicide
+df_3 = df_2%>%group_by(DrinkingDriving, AttemptSuicide)%>%
+  summarize(count=n())%>%
+  mutate(freq=count/sum(count))
+ggplot(data=df_3, mapping=aes(x=DrinkingDriving, y=AttemptSuicide))+
+  geom_tile(aes(fill=freq))+
+  geom_text(aes(label = round(freq, digits=2)), color = "white", size = 4)
+```
+
+```{r}
+# RSex vs AttemptSuicide
+df_3 = df_2%>%group_by(Sex, AttemptSuicide)%>%
+  summarize(count=n())%>%
+  mutate(freq=count/sum(count))
+ggplot(data=df_3, mapping=aes(x=Sex, y=AttemptSuicide))+
+  geom_tile(aes(fill=freq))+
+  geom_text(aes(label = freq), color = "white", size = 4)
+```
+
+```{r}
+# Latino vs AttemptSuicide
+df_3 = df_2%>%group_by(Latino, AttemptSuicide)%>%
+  summarize(count=n())%>%
+  mutate(freq=count/sum(count))
+ggplot(data=df_3, mapping=aes(x=Latino, y=AttemptSuicide))+
+  geom_tile(aes(fill=freq))+
+  geom_text(aes(label = freq), color = "white", size = 4)
+```
+
+```{r}
+# SawViolenceNeighborhood vs AttemptSuicide
+df_3 = df_2%>%group_by(SawViolenceNeighborhood, AttemptSuicide)%>%
+  summarize(count=n())%>%
+  mutate(freq=count/sum(count))
+ggplot(data=df_3, mapping=aes(x=SawViolenceNeighborhood, y=AttemptSuicide))+
+  geom_tile(aes(fill=freq))+
+  geom_text(aes(label = paste0(count, "\n (", round(freq, digits=2), ")")), color = "white", size = 4)
+```
+
+```{r}
+# Parametric GLM with selected factors
+df_glm = df_2
+df_glm$AttemptSuicide[df_glm$AttemptSuicide=="1"] = 0
+df_glm$AttemptSuicide[df_glm$AttemptSuicide=="2"] = 1
+df_glm$AttemptSuicide = as.numeric(df_glm$AttemptSuicide)
+df_glm$DrinkingDriving[df_glm$DrinkingDriving%in%c("1","2")] = "0"
+df_glm$DrinkingDriving[df_glm$DrinkingDriving%in%c("3","4","5","6")] = "1"
+model_1 = glm(AttemptSuicide~Race_Black+Race_Asian+Race_White+Race_NH_PI+Race_AI_AN+Sex+Latino+Grade+SawViolenceNeighborhood+ForcedIntercourse+DrinkingDriving, data=df_glm, family="binomial")
+summary(model_1)
+```
+
+```{r}
+# Code to run permutations of one factor
+df = df_2
+set.seed = 1
+factor_int_props = c()
+factor_int = "Race_Asian"
+for (i in 1:n){
+  df_perm = df
+  for (j in 1:ncol(df)){
+    df_perm[,j] = sample(df[,j], size=nrow(df), replace=FALSE)
+  }
+  factor_int_prop = df_perm%>%group_by((!! sym(factor_int)), AttemptSuicide)%>%
+    summarize(count=n())%>%
+  mutate(freq=count/sum(count))%>%ungroup()%>%
+    filter(AttemptSuicide=="2")%>%
+    summarize(freq_diff = max(freq)-min(freq))
+  factor_int_props = c(factor_int_props, factor_int_prop$freq_diff)
+}
+
+factor_int_observed = df_2%>%group_by((!! sym(factor_int)), AttemptSuicide)%>%
+    summarize(count=n())%>%
+  mutate(freq=count/sum(count))%>%ungroup()%>%
+    filter(AttemptSuicide=="2")%>%
+    summarize(freq_diff = max(freq)-min(freq))
+percentile = ecdf(factor_int_props)
+percentile(factor_int_observed$freq_diff)
+```
+
+
+```{r message=F, warning=F}
+# Function to run permutations of one factor
+
+perm = function(df, factor_int, n){
+  set.seed(1)
+  factor_int_props = c()
+  factor_int = c(factor_int)
+  for (i in 1:n){
+    df_perm = df
+    for (j in 1:ncol(df)){
+      df_perm[,j] = sample(df[,j], size=nrow(df), replace=FALSE)
+    }
+    factor_int_prop = df_perm%>%group_by((!! sym(factor_int)), AttemptSuicide)%>%
+      summarize(count=n())%>%
+    mutate(freq=count/sum(count))%>%ungroup()%>%
+      filter(AttemptSuicide=="2")%>%
+      summarize(freq_diff = max(freq)-min(freq))
+    factor_int_props = c(factor_int_props, factor_int_prop$freq_diff)
+  }
+  
+  factor_int_observed = df_2%>%group_by((!! sym(factor_int)), AttemptSuicide)%>%
+      summarize(count=n())%>%
+    mutate(freq=count/sum(count))%>%ungroup()%>%
+      filter(AttemptSuicide=="2")%>%
+      summarize(freq_diff = max(freq)-min(freq))
+  percentile = ecdf(factor_int_props)
+  return(percentile(factor_int_observed$freq_diff))
+}
+```
+```{r message=F, warning=F}
+perm(df=df_2, factor_int="Race_Black", n=100)
+```
+```{r message=F, warning=F}
+perm(df=df_2, factor_int="Sex", n=100)
+```
+```{r message=F, warning=F}
+perm(df=df_2, factor_int="Race_Asian", n=100)
+```
+
+```{r message=F, warning=F}
+perm(df=df_2, factor_int="Latino", n=100)
+```
+
+```{r message=F, warning=F}
+perm(df=df_2, factor_int="SawViolenceNeighborhood", n=100)
+```
+

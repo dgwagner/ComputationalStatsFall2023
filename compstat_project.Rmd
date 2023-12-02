@@ -90,11 +90,27 @@ df_2$Race_NH_PI[df_2$Race_NH_PI==FALSE] = "0"
 df_2$Race_White = str_detect(df_2$Race, 'E')
 df_2$Race_White[df_2$Race_White==TRUE] = "1"
 df_2$Race_White[df_2$Race_White==FALSE] = "0"
+# Make binary
 df_2$AttemptSuicide[df_2$AttemptSuicide != "1"] = "2"
+# Clean values
+df_2$SawViolenceNeighborhood[df_2$SawViolenceNeighborhood=="1"] = 0
+df_2$SawViolenceNeighborhood[df_2$SawViolenceNeighborhood=="2"] = 1
+df_2$SawViolenceNeighborhood = as.numeric(df_2$SawViolenceNeighborhood)
+df_2$BulliedSchool[df_2$BulliedSchool=="1"] = 0
+df_2$BulliedSchool[df_2$BulliedSchool=="2"] = 1
+df_2$BulliedSchool = as.numeric(df_2$BulliedSchool)
 
 # Make height and weight numeric
 df_2$Height = as.numeric(df_2$Height)
 df_2$Weight = as.numeric(df_2$Weight)
+
+# Clean values
+df_2$AttemptSuicide[df_2$AttemptSuicide=="1"] = 0
+df_2$AttemptSuicide[df_2$AttemptSuicide=="2"] = 1
+df_2$AttemptSuicide = as.numeric(df_2$AttemptSuicide)
+df_2$DrinkingDriving[df_2$DrinkingDriving%in%c("1","2")] = "0"
+df_2$DrinkingDriving[df_2$DrinkingDriving%in%c("3","4","5","6")] = "1"
+
 ```
 
 ## Exploration
@@ -208,18 +224,9 @@ model_1 = glm(AttemptSuicide~Race_Black+Race_Asian+Race_White+Race_NH_PI+Race_AI
 summary(model_1)
 ```
 
-```{r}
-# Parametric GLM with selected factors
 
-df_2$AttemptSuicide[df_2$AttemptSuicide=="1"] = 0
-df_2$AttemptSuicide[df_2$AttemptSuicide=="2"] = 1
-df_2$AttemptSuicide = as.numeric(df_2$AttemptSuicide)
-#df_2$DrinkingDriving[df_2$DrinkingDriving%in%c("1","2")] = "0"
-#df_2$DrinkingDriving[df_2$DrinkingDriving%in%c("3","4","5","6")] = "1"
-model_1 = glm(AttemptSuicide~Race_Black+SawViolenceNeighborhood, data=df_2, family="binomial")
-summary(model_1)
-```
 
+## Single Factor Permutation Testing
 
 ```{r}
 # Code to run permutations of one factor
@@ -297,238 +304,60 @@ perm(df=df_2, factor_int="Latino", n=100)
 perm(df=df_2, factor_int="SawViolenceNeighborhood", n=100)
 ```
 
-## Race_Black and SawViolenceNeighborhood
+## Freedman-Lane Procedure
 
-```{r message=F, warning=F}
-set.seed(1)
+```{r}
+# Can be iterated to add new predictors
 
-# Function to run permutations of response
-df_observed = df_2%>%group_by(Race_Black, SawViolenceNeighborhood, AttemptSuicide)%>%
-      summarize(count=n())%>%
-    mutate(freq=count/sum(count))%>%ungroup()%>%
-  mutate(iter="Observed")
+library(broom)
+library(rlang)
 
-n = 100
-df_out_all = df_observed
-for (i in 1:n){
-  df_perm = df_2
-  df_perm$AttemptSuicide = sample(df_perm$AttemptSuicide, size=nrow(df_perm), replace=FALSE)
-  df_out = df_perm%>%group_by(Race_Black, SawViolenceNeighborhood, AttemptSuicide)%>%
-      summarize(count=n())%>%
-    mutate(freq=count/sum(count))%>%ungroup()%>%
-    mutate(iter = i)
-  df_out_all = rbind(df_out_all, df_out)
+target = "BulliedSchool"
+nuisance = c("SawViolenceNeighborhood","Race_AI_AN","Sex","ForcedIntercourse")
+
+model_1 = glm(reformulate(c(target, nuisance),'AttemptSuicide'), data=df_2, family="binomial")
+t_0 = model_1$coefficients[[2]]
+
+freedman_lane = function(df, target, nuisance){
+  model_nuisance = glm(reformulate(nuisance,'AttemptSuicide'), data=df, family='binomial')
+  e_z = model_nuisance$residuals
+  n = 100
+  t_s = c()
+  set.seed(1)
+  for (i in 1:n){
+    e_z = sample(e_z, length(e_z), replace=F)
+    nuis_coefs = c()
+    for (i in 1:length(nuisance)){
+      nuis_coef = model_nuisance$coefficients[[i+1]]
+      nuis_coefs = append(nuis_coefs, nuis_coef)
+    }
+    y_j_star = e_z+matrix(as.numeric(as.matrix(df[colnames(df)%in%nuisance][,1:length(nuisance)])),ncol=length(nuisance))%*%nuis_coefs
+    #y_j_star[y_j_star < 0] = 0
+    #y_j_star[y_j_star >= 0] = 1
+    df$y_j_star = y_j_star
+    model_perm = glm(reformulate(c(target, nuisance),'y_j_star'), data=df)
+    t_s = c(t_s, model_perm$coefficients[[2]])
+  }
+  return(t_s)
 }
+t_s = freedman_lane(df = df_2, target = target, nuisance = nuisance)
 ```
 
 ```{r}
-df_out_all = df_out_all%>%filter(iter!="Observed")
-df_out_all$iter = as.numeric(df_out_all$iter)
-```
-
-```{r message=F, warning=F}
-q_s = c()
-for (i in 1:n){
-  df_temp = df_out_all%>%filter(iter==i)
-  t = sum((df_temp$count-mean(df_temp$count))^2)
-  df_temp_reduced = df_temp%>%group_by(Race_Black, AttemptSuicide)%>%
-    summarize(count=sum(count))
-  w = 4*sum((mean(df_temp_reduced$count)-mean(df_temp$count))^2)
-  q = w/t
-  q_s = c(q_s, q)
-}
+ggplot()+
+  geom_density(aes(x=t_s))+
+  geom_vline(aes(xintercept=t_0), color="red")+
+ scale_x_continuous(limits=c(-1.75,1.5), expand=c(0,0))+
+  scale_y_continuous(limits=c(0,3.25), expand=c(0,0))+
+  theme_bw()+
+  theme(panel.grid=element_blank())+
+  xlab("Permutation Distribution of Coefficient")+
+  ylab("Density")+
+  ggtitle('Freedman-Lane Coefficients for "Saw Neighborhood Violence"')
 ```
 
 ```{r}
-t = sum((df_observed$count-mean(df_observed$count))^2)
-df_observed_reduced = df_observed%>%group_by(Race_Black, AttemptSuicide)%>%
-  summarize(count=sum(count))
-w = 4*sum((mean(df_observed_reduced$count)-mean(df_observed$count))^2)
-q_obs = w/t
-```
-
-## Race_Asian and SawViolenceNeighborhood
-
-```{r message=F, warning=F}
-set.seed(1)
-
-# Function to run permutations of response
-df_observed = df_2%>%group_by(Race_Asian, SawViolenceNeighborhood, AttemptSuicide)%>%
-      summarize(count=n())%>%
-    mutate(freq=count/sum(count))%>%ungroup()%>%
-  mutate(iter="Observed")
-
-n = 100
-df_out_all = df_observed
-for (i in 1:n){
-  df_perm = df_2
-  df_perm$AttemptSuicide = sample(df_perm$AttemptSuicide, size=nrow(df_perm), replace=FALSE)
-  df_out = df_perm%>%group_by(Race_Asian, SawViolenceNeighborhood, AttemptSuicide)%>%
-      summarize(count=n())%>%
-    mutate(freq=count/sum(count))%>%ungroup()%>%
-    mutate(iter = i)
-  df_out_all = rbind(df_out_all, df_out)
-}
-```
-
-```{r}
-df_out_all = df_out_all%>%filter(iter!="Observed")
-df_out_all$iter = as.numeric(df_out_all$iter)
-```
-
-```{r message=F, warning=F}
-q_s = c()
-for (i in 1:n){
-  df_temp = df_out_all%>%filter(iter==i)
-  t = sum((df_temp$count-mean(df_temp$count))^2)
-  df_temp_reduced = df_temp%>%group_by(Race_Asian, AttemptSuicide)%>%
-    summarize(count=sum(count))
-  w = 4*sum((mean(df_temp_reduced$count)-mean(df_temp$count))^2)
-  q = w/t
-  q_s = c(q_s, q)
-}
-```
-
-```{r}
-t = sum((df_observed$count-mean(df_observed$count))^2)
-df_observed_reduced = df_observed%>%group_by(Race_Asian, AttemptSuicide)%>%
-  summarize(count=sum(count))
-w = 4*sum((mean(df_observed_reduced$count)-mean(df_observed$count))^2)
-q_obs = w/t
-```
-
-## SawViolenceNeighborhood
-
-```{r message=F, warning=F}
-set.seed(1)
-
-# Function to run permutations of response
-df_observed = df_2%>%group_by(SawViolenceNeighborhood, AttemptSuicide)%>%
-      summarize(count=n())%>%
-    mutate(freq=count/sum(count))%>%ungroup()%>%
-  mutate(iter="Observed")
-
-n = 100
-df_out_all = df_observed
-for (i in 1:n){
-  df_perm = df_2
-  df_perm$AttemptSuicide = sample(df_perm$AttemptSuicide, size=nrow(df_perm), replace=FALSE)
-  df_out = df_perm%>%group_by(SawViolenceNeighborhood, AttemptSuicide)%>%
-      summarize(count=n())%>%
-    mutate(freq=count/sum(count))%>%ungroup()%>%
-    mutate(iter = i)
-  df_out_all = rbind(df_out_all, df_out)
-}
-```
-
-```{r}
-df_out_all = df_out_all%>%filter(iter!="Observed")
-df_out_all$iter = as.numeric(df_out_all$iter)
-```
-
-```{r message=F, warning=F}
-q_s = c()
-for (i in 1:n){
-  df_temp = df_out_all%>%filter(iter==i)
-  t = sum((df_temp$count-mean(df_temp$count))^2)
-  df_temp_reduced = df_temp%>%group_by(AttemptSuicide)%>%
-    summarize(count=sum(count))
-  w = 4*sum((mean(df_temp_reduced$count)-mean(df_temp$count))^2)
-  q = w/t
-  q_s = c(q_s, q)
-}
-```
-
-```{r}
-t = sum((df_observed$count-mean(df_observed$count))^2)
-df_observed_reduced = df_observed%>%group_by(AttemptSuicide)%>%
-  summarize(count=sum(count))
-w = 4*sum((mean(df_observed_reduced$count)-mean(df_observed$count))^2)
-q_obs = w/t
-```
-
-## Race_Black and SawViolenceNeighborhood
-
-```{r message=F, warning=F}
-set.seed(1)
-
-# Function to run permutations of response
-df_observed = df_2%>%group_by(Race_Black, SawViolenceNeighborhood, AttemptSuicide)%>%
-      summarize(count=n())%>%
-    mutate(freq=count/sum(count))%>%ungroup()%>%
-  mutate(iter="Observed")
-
-n = 100
-df_out_all = df_observed
-for (i in 1:n){
-  df_perm = df_2
-  df_perm$AttemptSuicide = sample(df_perm$AttemptSuicide, size=nrow(df_perm), replace=FALSE)
-  df_out = df_perm%>%group_by(Race_Black, SawViolenceNeighborhood, AttemptSuicide)%>%
-      summarize(count=n())%>%
-    mutate(freq=count/sum(count))%>%ungroup()%>%
-    mutate(iter = i)
-  df_out_all = rbind(df_out_all, df_out)
-}
-```
-
-```{r}
-df_out_all = df_out_all%>%filter(iter!="Observed")
-df_out_all$iter = as.numeric(df_out_all$iter)
-```
-
-```{r}
-h_s = c()
-for (i in 1:n){
-  df_temp = df_out_all%>%filter(iter==i)
-  h = sum((df_temp$freq-mean(df_temp$freq))^2)/8
-  h_s = c(h_s, h)
-}
-```
-
-```{r}
-h_obs = sum((df_observed$freq-mean(df_observed$freq))^2)/8
-```
-
-
-## SawViolenceNeighborhood
-
-```{r message=F, warning=F}
-set.seed(1)
-
-# Function to run permutations of response
-df_observed = df_2%>%group_by(SawViolenceNeighborhood, AttemptSuicide)%>%
-      summarize(count=n())%>%
-    mutate(freq=count/sum(count))%>%ungroup()%>%
-  mutate(iter="Observed")
-
-n = 100
-df_out_all = df_observed
-for (i in 1:n){
-  df_perm = df_2
-  df_perm$AttemptSuicide = sample(df_perm$AttemptSuicide, size=nrow(df_perm), replace=FALSE)
-  df_out = df_perm%>%group_by(SawViolenceNeighborhood, AttemptSuicide)%>%
-      summarize(count=n())%>%
-    mutate(freq=count/sum(count))%>%ungroup()%>%
-    mutate(iter = i)
-  df_out_all = rbind(df_out_all, df_out)
-}
-```
-
-```{r}
-df_out_all = df_out_all%>%filter(iter!="Observed")
-df_out_all$iter = as.numeric(df_out_all$iter)
-```
-
-```{r}
-h_s_reduced = c()
-for (i in 1:n){
-  df_temp = df_out_all%>%filter(iter==i)
-  h = sum((df_temp$freq-mean(df_temp$freq))^2)/4
-  h_s_reduced = c(h_s_reduced, h)
-}
-```
-
-```{r}
-h_obs_reduced = sum((df_observed$freq-mean(df_observed$freq))^2)/4
+percentile = ecdf(t_s)
+percentile(t_0)
 ```
 
